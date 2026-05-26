@@ -283,11 +283,17 @@
 
     function matchSegments(audienceText, taxonomy) {
       if (!audienceText || !taxonomy.length) return [];
-      var text = audienceText.toLowerCase();
+      var text = audienceText.toLowerCase().trim();
+      var tokens = text.split(/[\s,;]+/).filter(function(t){ return t.length >= 3; });
       var matched = [], seen = new Set();
       taxonomy.forEach(function(entry) {
         if (seen.has(entry.segment)) return;
-        var hit = entry.keywords.some(function(kw) { return text.includes(kw); });
+        var hit = entry.keywords.some(function(kw) {
+          // 1. Ключевое слово содержится в тексте целиком
+          if (text.includes(kw)) return true;
+          // 2. Токен из текста является префиксом ключевого слова
+          return tokens.some(function(tok) { return kw.startsWith(tok); });
+        });
         if (hit) { matched.push(entry.segment); seen.add(entry.segment); }
       });
       return matched;
