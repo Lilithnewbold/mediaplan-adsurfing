@@ -331,8 +331,6 @@
           var json=JSON.stringify(payload);
           await navigator.clipboard.writeText(json);
           setGsStatus("copied");
-          setVersion(function(v){return v+1;});
-          setTimeout(function(){setGsStatus("");},15000);
         }catch(e){
           setGsStatus("error");
           setStatusMsg("Ошибка копирования: "+e.message);setStatusErr(true);
@@ -515,23 +513,44 @@
                   </button>
 
                   {gsStatus==="copied" && (
-                    <div style={{marginTop:16,padding:"20px",background:"#F0FFF4",borderRadius:12,border:"1.5px solid #68D391"}}>
-                      <div style={{fontSize:14,fontWeight:700,color:"#276749",marginBottom:14}}>Данные скопированы в буфер. Теперь 3 шага:</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>1</span>
-                          <span style={{fontSize:14,color:"#1a1a1a",lineHeight:1.5}}>Открой Apps Script: <a href="https://script.google.com" target="_blank" rel="noreferrer" style={{color:ACCENT,fontWeight:600}}>script.google.com</a></span>
+                    <div style={{marginTop:16,padding:"24px",background:"#F0FFF4",borderRadius:12,border:"1.5px solid #68D391"}}>
+                      <div style={{fontSize:15,fontWeight:700,color:"#276749",marginBottom:6}}>Данные скопированы. Теперь перенеси план в Google Таблицу:</div>
+                      <div style={{fontSize:13,color:"#555",marginBottom:20}}>Для этого используется скрипт, который автоматически создаёт таблицу с нужным форматированием. Следуй шагам ниже.</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+                        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>1</span>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:4}}>Открой Apps Script</div>
+                            <div style={{fontSize:13,color:"#555",marginBottom:6}}>Apps Script — это встроенный инструмент Google для автоматизации таблиц. Открывается в браузере.</div>
+                            <a href="https://script.google.com" target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"8px 16px",background:ACCENT,color:WHITE,borderRadius:8,fontSize:13,fontWeight:700,textDecoration:"none"}}>Открыть script.google.com →</a>
+                          </div>
                         </div>
-                        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>2</span>
-                          <span style={{fontSize:14,color:"#1a1a1a",lineHeight:1.5}}>Найди переменную <code style={{background:"#f0f0f0",padding:"1px 6px",borderRadius:4}}>DATA = ``</code> и вставь данные между обратными кавычками (Cmd+V)</span>
+
+                        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>2</span>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:4}}>Найди строку с DATA и вставь данные</div>
+                            <div style={{fontSize:13,color:"#555",marginBottom:4}}>В коде скрипта найди строку которая выглядит так:</div>
+                            <div style={{background:"#1a1a1a",color:"#a8ff78",fontFamily:"monospace",fontSize:12,padding:"10px 14px",borderRadius:8,marginBottom:6}}>{"const DATA = ``;"}</div>
+                            <div style={{fontSize:13,color:"#555"}}>Кликни между двумя обратными кавычками <code style={{background:"#eee",padding:"1px 5px",borderRadius:4}}>``</code> и нажми <strong>Cmd+V</strong> — данные вставятся.</div>
+                          </div>
                         </div>
-                        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>3</span>
-                          <span style={{fontSize:14,color:"#1a1a1a",lineHeight:1.5}}>Нажми ▶ Выполнить и выбери функцию <code style={{background:"#f0f0f0",padding:"1px 6px",borderRadius:4}}>createFromGenerator</code></span>
+
+                        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>3</span>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:4}}>Запусти скрипт</div>
+                            <div style={{fontSize:13,color:"#555",marginBottom:4}}>Вверху страницы в выпадающем списке выбери функцию <strong>createFromGenerator</strong>, потом нажми кнопку <strong>▶ Выполнить</strong>.</div>
+                            <div style={{fontSize:13,color:"#555"}}>Через несколько секунд в твоём Google Drive появится готовая таблица с медиапланом.</div>
+                          </div>
                         </div>
+
                       </div>
-                      <button onClick={saveToSheets} style={{marginTop:16,padding:"9px 18px",borderRadius:8,border:"1.5px solid #68D391",background:WHITE,color:"#276749",fontSize:13,fontWeight:600,cursor:"pointer"}}>Скопировать ещё раз</button>
+                      <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid #C6F6D5",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                        <button onClick={saveToSheets} style={{padding:"9px 18px",borderRadius:8,border:"1.5px solid #68D391",background:WHITE,color:"#276749",fontSize:13,fontWeight:600,cursor:"pointer"}}>Скопировать данные ещё раз</button>
+                        <button onClick={function(){setGsStatus("");}} style={{padding:"9px 18px",borderRadius:8,border:"1.5px solid #ddd",background:WHITE,color:MUTED,fontSize:13,cursor:"pointer"}}>Закрыть инструкцию</button>
+                      </div>
                     </div>
                   )}
                 </div>
