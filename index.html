@@ -266,7 +266,7 @@
       var s9=useState(false);         var formatSplit=s9[0],setFormatSplit=s9[1];
       var s10=useState(false);        var platformSplit=s10[0],setPlatformSplit=s10[1];
       var s11=useState("");           var gsStatus=s11[0],setGsStatus=s11[1];
-      var s12=useState(function(){ return localStorage.getItem("ads_api_key")||""; });
+      var s12=useState(function(){ return localStorage.getItem("ads_groq_key")||""; });
       var apiKey=s12[0],setApiKey=s12[1];
       var s13=useState(false);        var showApiInput=s13[0],setShowApiInput=s13[1];
 
@@ -288,27 +288,33 @@
       function validate(){var e=[];if(!form.client.trim())e.push("Клиент");if(!form.periodStart)e.push("Дата старта");if(!form.periodEnd)e.push("Дата окончания");if(!rows.length)e.push("Добавь строку в план");setErrors(e);return e.length===0;}
 
       async function generate(){
-        if(!apiKey){alert("Укажи API ключ Anthropic в шапке страницы");return;}
+        if(!apiKey){alert("Укажи Groq API ключ в шапке страницы");return;}
         setLoading(true);setStatusMsg("Генерирую...");setStatusErr(false);setRows([]);
         var productName=(form.model==="CPC"||form.model==="CPV (visit)")?"SurfClick":"ADSurfing Reach Maximizer";
         var brief=["Клиент: "+(form.client||"не указан"),"Бренд: "+(form.brand||"не указан"),"Кампания: "+(form.campaign||"не указано"),"Период: "+(form.periodStart?form.periodStart+" – "+(form.periodEnd||"?"):"не указан"),"Цель: "+(form.goal||"не указана")+(form.goalNote?" ("+form.goalNote+")":""),"Бюджет без НДС: "+(form.budgetNet?form.budgetNet+" руб.":"не указан"),"Модель: "+form.model,"Форматы: "+(form.formats.length?form.formats.join(", "):"все"),"Разбивать по форматам: "+(formatSplit?"да":"нет"),"Гео: "+(form.geo||"не указано"),"Разбивать по гео: "+(geoSplit?"да":"нет"),"Платформы: "+(form.platforms.join(", ")||"не указаны"),"Разбивать по платформам: "+(platformSplit?"да":"нет"),"Аудитория: "+(form.audience||"не указана"),"Частота: "+(form.frequency||"не задана")].join("\n");
         var sys="Ты — медиапланировщик ADSurfing. Верни ТОЛЬКО валидный JSON без markdown.\nФорматы: Connected TV, Online Video, Shoppable Ads, Rewarded Video, Баннеры, Rich Media, Fullscreen.\nVTR и просмотры только для: Connected TV, Online Video, Shoppable Ads, Rewarded Video.\nПродукт=\""+productName+"\". НДС=22%. Единица=\""+form.model+"\".\ncpmNet=null. units=null. PI=null. Если частота не задана — reach=null.\nCPV(visit): units=визиты, PI=конверсия клика в визит.\nВерни: {\"rows\":[{\"product\":\""+productName+"\",\"format\":\"Баннеры\",\"dateStart\":\"01.07.2025\",\"dateEnd\":\"31.07.2025\",\"targeting\":\"...\",\"platform\":\"web\",\"unit\":\""+form.model+"\",\"units\":null,\"cpmNet\":null,\"budgetNet\":"+(form.budgetNet||null)+",\"vat\":22,\"budgetGross\":"+(form.budgetNet?Math.round(num(form.budgetNet)*1.22):null)+",\"impressions\":null,\"ctr\":null,\"clicks\":null,\"pi\":null,\"vtr\":null,\"views\":null,\"frequency\":"+(form.frequency||null)+",\"reach\":null}]}";
         try{
-          var resp=await fetch("https://api.anthropic.com/v1/messages",{
+          var resp=await fetch("https://api.groq.com/openai/v1/chat/completions",{
             method:"POST",
             headers:{
               "Content-Type":"application/json",
-              "x-api-key":apiKey,
-              "anthropic-version":"2023-06-01",
-              "anthropic-dangerous-direct-browser-access":"true"
+              "Authorization":"Bearer "+apiKey
             },
-            body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:sys,messages:[{role:"user",content:brief}]})
+            body:JSON.stringify({
+              model:"llama-3.3-70b-versatile",
+              max_tokens:4000,
+              temperature:0.2,
+              messages:[
+                {role:"system",content:sys},
+                {role:"user",content:brief}
+              ]
+            })
           });
           var data=await resp.json();
           if(data.error){throw new Error(data.error.message);}
-          var raw=data.content.filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
+          var raw=data.choices[0].message.content;
           var match=raw.match(/\{[\s\S]*\}/);
-          if(!match)throw new Error("JSON не найден");
+          if(!match)throw new Error("JSON не найден в ответе");
           var parsed=JSON.parse(match[0].replace(/,\s*([}\]])/g,"$1"));
           setRows(Array.isArray(parsed)?parsed:(parsed.rows||[]));
           setStatusMsg("");
@@ -350,21 +356,21 @@
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               {!showApiInput && (
                 <button onClick={function(){setShowApiInput(true);}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+BORDER,background:apiKey?"#F0FFF4":"#FFF0F5",color:apiKey?"#276749":ACCENT,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  {apiKey?"API ключ: задан ✓":"API ключ: не задан"}
+                  {apiKey?"Groq API ключ: задан ✓":"Groq API ключ: не задан"}
                 </button>
               )}
               {showApiInput && (
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <input
                     type="password"
-                    placeholder="sk-ant-..."
+                    placeholder="gsk_..."
                     defaultValue={apiKey}
                     id="api-key-input"
                     style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:280,outline:"none"}}
                   />
                   <button onClick={function(){
                     var val=document.getElementById("api-key-input").value.trim();
-                    if(val){localStorage.setItem("ads_api_key",val);setApiKey(val);}
+                    if(val){localStorage.setItem("ads_groq_key",val);setApiKey(val);}
                     setShowApiInput(false);
                   }} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
                   <button onClick={function(){setShowApiInput(false);}} style={{padding:"7px 10px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:12,cursor:"pointer"}}>Отмена</button>
