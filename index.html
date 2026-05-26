@@ -265,10 +265,12 @@
       var s8=useState(false);         var geoSplit=s8[0],setGeoSplit=s8[1];
       var s9=useState(false);         var formatSplit=s9[0],setFormatSplit=s9[1];
       var s10=useState(false);        var platformSplit=s10[0],setPlatformSplit=s10[1];
-      var s11=useState("");           var gsStatus=s11[0],setGsStatus=s11[1];
       var s12=useState(function(){ return localStorage.getItem("ads_groq_key")||""; });
       var apiKey=s12[0],setApiKey=s12[1];
       var s13=useState(false);        var showApiInput=s13[0],setShowApiInput=s13[1];
+      var s14=useState(function(){ return localStorage.getItem("ads_script_url")||""; });
+      var scriptUrl=s14[0],setScriptUrl=s14[1];
+      var s15=useState(false);        var showScriptInput=s15[0],setShowScriptInput=s15[1];
 
       function set(k,v){setForm(function(f){return Object.assign({},f,{[k]:v});});}
       var allFormats=FORMATS_PRESET.concat(form.customFormat.trim()?[form.customFormat.trim()]:[]);
@@ -322,19 +324,22 @@
         setLoading(false);
       }
 
-      async function saveToSheets(){
+      function saveToSheets(){
         setShowVal(true);
-        if(!validate()){setGsStatus("");return;}
-        setGsStatus("");
-        try{
-          var payload={fileName:fileName,header:{advertiser:form.client,brand:form.brand,campaign:form.campaign,period:periodRu(form.periodStart,form.periodEnd),manager:form.manager},rows:rows.map(function(r){return Object.assign({},r,{geo:form.geo,socdem:form.socdem,interests:finalInterests});})};
-          var json=JSON.stringify(payload);
-          await navigator.clipboard.writeText(json);
-          setGsStatus("copied");
-        }catch(e){
-          setGsStatus("error");
-          setStatusMsg("Ошибка копирования: "+e.message);setStatusErr(true);
-        }
+        if(!validate()) return;
+        if(!scriptUrl){ alert("Укажи URL Apps Script в шапке страницы"); return; }
+        var payload={fileName:fileName,header:{advertiser:form.client,brand:form.brand,campaign:form.campaign,period:periodRu(form.periodStart,form.periodEnd),manager:form.manager},rows:rows.map(function(r){return Object.assign({},r,{geo:form.geo,socdem:form.socdem,interests:finalInterests});})};
+        var frm=document.createElement("form");
+        frm.method="POST";
+        frm.action=scriptUrl;
+        frm.target="_blank";
+        var inp=document.createElement("input");
+        inp.type="hidden"; inp.name="data"; inp.value=JSON.stringify(payload);
+        frm.appendChild(inp);
+        document.body.appendChild(frm);
+        frm.submit();
+        document.body.removeChild(frm);
+        setVersion(function(v){return v+1;});
       }
 
       var totNet=rows.reduce(function(s,r){return s+(num(r.budgetNet)||0);},0);
@@ -354,24 +359,26 @@
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               {!showApiInput && (
                 <button onClick={function(){setShowApiInput(true);}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+BORDER,background:apiKey?"#F0FFF4":"#FFF0F5",color:apiKey?"#276749":ACCENT,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  {apiKey?"Groq API ключ: задан ✓":"Groq API ключ: не задан"}
+                  {apiKey?"Groq API: задан ✓":"Groq API: не задан"}
                 </button>
               )}
               {showApiInput && (
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <input
-                    type="password"
-                    placeholder="gsk_..."
-                    defaultValue={apiKey}
-                    id="api-key-input"
-                    style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:280,outline:"none"}}
-                  />
-                  <button onClick={function(){
-                    var val=document.getElementById("api-key-input").value.trim();
-                    if(val){localStorage.setItem("ads_groq_key",val);setApiKey(val);}
-                    setShowApiInput(false);
-                  }} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
+                  <input type="password" placeholder="gsk_..." defaultValue={apiKey} id="api-key-input" style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:260,outline:"none"}}/>
+                  <button onClick={function(){var val=document.getElementById("api-key-input").value.trim();if(val){localStorage.setItem("ads_groq_key",val);setApiKey(val);}setShowApiInput(false);}} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
                   <button onClick={function(){setShowApiInput(false);}} style={{padding:"7px 10px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:12,cursor:"pointer"}}>Отмена</button>
+                </div>
+              )}
+              {!showScriptInput && (
+                <button onClick={function(){setShowScriptInput(true);}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+BORDER,background:scriptUrl?"#F0FFF4":"#FFF0F5",color:scriptUrl?"#276749":ACCENT,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  {scriptUrl?"Apps Script: задан ✓":"Apps Script: не задан"}
+                </button>
+              )}
+              {showScriptInput && (
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input type="text" placeholder="https://script.google.com/macros/s/..." defaultValue={scriptUrl} id="script-url-input" style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:340,outline:"none"}}/>
+                  <button onClick={function(){var val=document.getElementById("script-url-input").value.trim();if(val){localStorage.setItem("ads_script_url",val);setScriptUrl(val);}setShowScriptInput(false);}} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
+                  <button onClick={function(){setShowScriptInput(false);}} style={{padding:"7px 10px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:12,cursor:"pointer"}}>Отмена</button>
                 </div>
               )}
             </div>
@@ -508,51 +515,9 @@
                 </div>
 
                 <div style={{padding:"20px 24px 24px"}}>
-                  <button onClick={saveToSheets} style={{display:"block",width:"100%",padding:"14px",borderRadius:10,border:"none",background:ACCENT,color:WHITE,fontSize:15,fontWeight:700,cursor:"pointer"}}>
-                    Сохранить в Google Sheets
+                  <button onClick={saveToSheets} style={{display:"block",width:"100%",padding:"14px",borderRadius:10,border:"none",background:scriptUrl?ACCENT:"#ccc",color:WHITE,fontSize:15,fontWeight:700,cursor:scriptUrl?"pointer":"not-allowed"}}>
+                    {scriptUrl?"Сохранить в Google Sheets →":"Укажи Apps Script URL в шапке"}
                   </button>
-
-                  {gsStatus==="copied" && (
-                    <div style={{marginTop:16,padding:"24px",background:"#F0FFF4",borderRadius:12,border:"1.5px solid #68D391"}}>
-                      <div style={{fontSize:15,fontWeight:700,color:"#276749",marginBottom:6}}>Данные скопированы. Теперь перенеси план в Google Таблицу:</div>
-                      <div style={{fontSize:13,color:"#555",marginBottom:20}}>Для этого используется скрипт, который автоматически создаёт таблицу с нужным форматированием. Следуй шагам ниже.</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:20}}>
-
-                        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>1</span>
-                          <div>
-                            <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:4}}>Открой Apps Script</div>
-                            <div style={{fontSize:13,color:"#555",marginBottom:6}}>Apps Script — это встроенный инструмент Google для автоматизации таблиц. Открывается в браузере.</div>
-                            <a href="https://script.google.com" target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"8px 16px",background:ACCENT,color:WHITE,borderRadius:8,fontSize:13,fontWeight:700,textDecoration:"none"}}>Открыть script.google.com →</a>
-                          </div>
-                        </div>
-
-                        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>2</span>
-                          <div>
-                            <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:4}}>Найди строку с DATA и вставь данные</div>
-                            <div style={{fontSize:13,color:"#555",marginBottom:4}}>В коде скрипта найди строку которая выглядит так:</div>
-                            <div style={{background:"#1a1a1a",color:"#a8ff78",fontFamily:"monospace",fontSize:12,padding:"10px 14px",borderRadius:8,marginBottom:6}}>{"const DATA = ``;"}</div>
-                            <div style={{fontSize:13,color:"#555"}}>Кликни между двумя обратными кавычками <code style={{background:"#eee",padding:"1px 5px",borderRadius:4}}>``</code> и нажми <strong>Cmd+V</strong> — данные вставятся.</div>
-                          </div>
-                        </div>
-
-                        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>3</span>
-                          <div>
-                            <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:4}}>Запусти скрипт</div>
-                            <div style={{fontSize:13,color:"#555",marginBottom:4}}>Вверху страницы в выпадающем списке выбери функцию <strong>createFromGenerator</strong>, потом нажми кнопку <strong>▶ Выполнить</strong>.</div>
-                            <div style={{fontSize:13,color:"#555"}}>Через несколько секунд в твоём Google Drive появится готовая таблица с медиапланом.</div>
-                          </div>
-                        </div>
-
-                      </div>
-                      <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid #C6F6D5",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-                        <button onClick={saveToSheets} style={{padding:"9px 18px",borderRadius:8,border:"1.5px solid #68D391",background:WHITE,color:"#276749",fontSize:13,fontWeight:600,cursor:"pointer"}}>Скопировать данные ещё раз</button>
-                        <button onClick={function(){setGsStatus("");}} style={{padding:"9px 18px",borderRadius:8,border:"1.5px solid #ddd",background:WHITE,color:MUTED,fontSize:13,cursor:"pointer"}}>Закрыть инструкцию</button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
