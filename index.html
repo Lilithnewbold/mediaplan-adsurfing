@@ -297,7 +297,7 @@
         var sys="Ты — медиапланировщик ADSurfing. Верни ТОЛЬКО валидный JSON без markdown.\nФорматы: Connected TV, Online Video, Shoppable Ads, Rewarded Video, Баннеры, Rich Media, Fullscreen.\nVTR и просмотры только для: Connected TV, Online Video, Shoppable Ads, Rewarded Video.\nПродукт=\""+productName+"\". НДС=22%. Единица=\""+form.model+"\".\ncpmNet=null. units=null. PI=null. Если частота не задана — reach=null.\nCPV(visit): units=визиты, PI=конверсия клика в визит.\nВерни: {\"rows\":[{\"product\":\""+productName+"\",\"format\":\"Баннеры\",\"dateStart\":\"01.07.2025\",\"dateEnd\":\"31.07.2025\",\"targeting\":\"...\",\"platform\":\"web\",\"unit\":\""+form.model+"\",\"units\":null,\"cpmNet\":null,\"budgetNet\":"+(form.budgetNet||null)+",\"vat\":22,\"budgetGross\":"+(form.budgetNet?Math.round(num(form.budgetNet)*1.22):null)+",\"impressions\":null,\"ctr\":null,\"clicks\":null,\"pi\":null,\"vtr\":null,\"views\":null,\"frequency\":"+(form.frequency||null)+",\"reach\":null}]}";
         try{
           var resp=await fetch(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+apiKey,
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="+apiKey,
             {
               method:"POST",
               headers:{"Content-Type":"application/json"},
