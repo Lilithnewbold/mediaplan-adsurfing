@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ADSurfing — Генератор медиаплана</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #FDE8EF; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useCallback } = React;
+
+    const ACCENT = "#D81B5E";
+    const BORDER = "#F48FB1";
+    const BG     = "#FDE8EF";
+    const WHITE  = "#FFFFFF";
+    const MUTED  = "#888";
+    const VAT    = 22;
+
+    const VIDEO_FORMATS = new Set(["Connected TV","Online Video","Shoppable Ads","Rewarded Video"]);
+    function isVid(f) { return VIDEO_FORMATS.has(f); }
+
+    const FORMAT_COLORS = {
+      "Connected TV":   { bg:"#EDE7F6", color:"#4527A0" },
+      "Online Video":   { bg:"#E3F2FD", color:"#0D47A1" },
+      "Shoppable Ads":  { bg:"#E8F5E9", color:"#1B5E20" },
+      "Rewarded Video": { bg:"#FFF8E1", color:"#E65100" },
+      "Баннеры":        { bg:"#FCE4EC", color:"#880E4F" },
+      "Rich Media":     { bg:"#FFF3E0", color:"#BF360C" },
+      "Fullscreen":     { bg:"#E0F7FA", color:"#006064" },
+    };
+    const FORMATS_PRESET = ["Connected TV","Online Video","Shoppable Ads","Rewarded Video","Баннеры","Rich Media","Fullscreen"];
+    const MODELS         = ["CPM","CPC","CPV (view)","CPV (visit)"];
+    const GOALS          = ["Охват и знание","Трафик на сайт","Конверсии","Ретаргетинг","Брендформанс"];
+    const PLATFORMS_OPT  = ["Web","InApp","Smart TV","Cross (Web+InApp)"];
+    const MONTHS_RU      = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+
+    const COLS = [
+      { key:"product",     label:"Продукт ADSurfing",        type:"text" },
+      { key:"format",      label:"Формат",                   type:"select", opts:FORMATS_PRESET },
+      { key:"dateStart",   label:"Дата старта РК",           type:"date" },
+      { key:"dateEnd",     label:"Дата окончания РК",        type:"date" },
+      { key:"targeting",   label:"Настройки таргетинга",     type:"text" },
+      { key:"platform",    label:"Платформа",                type:"text" },
+      { key:"unit",        label:"Единица закупки",          type:"select", opts:MODELS },
+      { key:"units",       label:"Кол-во единиц",            type:"number" },
+      { key:"cpmNet",      label:"Стоимость за ед. без НДС", type:"number" },
+      { key:"budgetNet",   label:"Бюджет без НДС, руб",      type:"number" },
+      { key:"vat",         label:"НДС %",                    type:"number" },
+      { key:"budgetGross", label:"Бюджет с НДС, руб",        type:"number" },
+      { key:"impressions", label:"Показы",                   type:"number" },
+      { key:"ctr",         label:"CTR%",                     type:"number" },
+      { key:"clicks",      label:"Кол-во кликов",            type:"number" },
+      { key:"pi",          label:"PI%",                      type:"number" },
+      { key:"vtr",         label:"VTR%",                     type:"number" },
+      { key:"views",       label:"Просмотры",                type:"number" },
+      { key:"frequency",   label:"Частота",                  type:"number" },
+      { key:"reach",       label:"Охват",                    type:"number" },
+    ];
+
+    function num(v) { return Number(v) || 0; }
+    function fmtRub(v) { if (v == null || v === "") return ""; return Number(v).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2})+" ₽"; }
+    function fmtInt(v) { if (v == null || v === "") return ""; return Number(v).toLocaleString("ru-RU"); }
+    function fmtPct(v) { if (v == null || v === "") return ""; return Number(v).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2})+"%"; }
+    function dateRu(d) { if (!d) return ""; var p=d.split("-"); if (p.length<3) return d; var mo=["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"]; return p[2]+"."+mo[parseInt(p[1],10)-1]; }
+    function periodRu(s,e) { var a=dateRu(s),b=dateRu(e); if (a&&b) return a+" - "+b; return a||b||""; }
+
+    function buildFileName(form, version) {
+      var parts = ["Adsurfing"];
+      if (form.client && form.client.trim()) parts.push(form.client.trim());
+      if (form.brand && form.brand.trim() && form.brand.trim()!==form.client.trim()) parts.push(form.brand.trim());
+      if (form.campaign && form.campaign.trim()) parts.push(form.campaign.trim());
+      function pm(d) { if (!d) return null; var p=d.split("-"); return p.length>=2?parseInt(p[1],10)-1:null; }
+      var m1=pm(form.periodStart), m2=pm(form.periodEnd), y1=form.periodStart?form.periodStart.split("-")[0]:null;
+      if (m1!==null&&m2!==null&&m1!==m2) parts.push(MONTHS_RU[m1]+"-"+MONTHS_RU[m2]);
+      else if (m1!==null) parts.push(MONTHS_RU[m1]);
+      if (y1) parts.push(y1);
+      parts.push("v"+version);
+      return parts.join("_").replace(/\s+/g,"_");
+    }
+
+    function recalc(r, key) {
+      var row = Object.assign({}, r);
+      var model = row.unit || "CPM";
+      var vid   = isVid(row.format);
+      var freq  = (row.frequency!=null&&row.frequency!=="") ? num(row.frequency) : null;
+      var bn    = num(row.budgetNet);
+      var cp    = num(row.cpmNet);
+      var impr  = num(row.impressions);
+      var ctr   = num(row.ctr);
+      var vtr   = num(row.vtr);
+      var pi    = num(row.pi);
+
+      function reach(imp) { return (freq&&imp) ? Math.round(imp/freq) : null; }
+
+      if (key==="budgetGross") { row.budgetNet=Math.round(num(row.budgetGross)/(1+VAT/100)); return recalc(row,"budgetNet"); }
+
+      if (key==="budgetNet"||key==="cpmNet") {
+        if (bn) row.budgetGross=Math.round(bn*(1+VAT/100));
+        if (!bn||!cp) return row;
+        if (model==="CPM") {
+          row.units=Math.round(bn/cp); row.impressions=row.units*1000;
+          row.clicks=ctr?Math.round(row.impressions*ctr/100):null;
+          row.views=(vid&&vtr)?Math.round(row.impressions*vtr/100):null;
+          row.reach=reach(row.impressions);
+        } else if (model==="CPC") {
+          row.units=Math.round(bn/cp); row.clicks=row.units;
+          if (ctr) { row.impressions=Math.round(row.clicks/(ctr/100)); row.reach=reach(row.impressions); }
+        } else if (model==="CPV (view)") {
+          row.units=Math.round(bn/cp); row.views=row.units;
+          if (vtr) { row.impressions=Math.round(row.views/(vtr/100)); row.reach=reach(row.impressions); row.clicks=ctr?Math.round(row.impressions*ctr/100):null; }
+        } else if (model==="CPV (visit)") {
+          row.units=Math.round(bn/cp);
+          if (pi) { row.clicks=Math.round(row.units/(pi/100)); if (ctr) { row.impressions=Math.round(row.clicks/(ctr/100)); row.reach=reach(row.impressions); } }
+        }
+        return row;
+      }
+
+      if (key==="units") {
+        if (cp) { row.budgetNet=Math.round(num(row.units)*cp); row.budgetGross=Math.round(row.budgetNet*(1+VAT/100)); }
+        if (model==="CPM") {
+          row.impressions=num(row.units)*1000; row.clicks=ctr?Math.round(row.impressions*ctr/100):null;
+          row.views=(vid&&vtr)?Math.round(row.impressions*vtr/100):null; row.reach=reach(row.impressions);
+        } else if (model==="CPC") {
+          row.clicks=num(row.units); if (ctr) { row.impressions=Math.round(row.clicks/(ctr/100)); row.reach=reach(row.impressions); }
+        } else if (model==="CPV (view)") {
+          row.views=num(row.units); if (vtr) { row.impressions=Math.round(row.views/(vtr/100)); row.reach=reach(row.impressions); row.clicks=ctr?Math.round(row.impressions*ctr/100):null; }
+        } else if (model==="CPV (visit)") {
+          if (pi) { row.clicks=Math.round(num(row.units)/(pi/100)); if (ctr) { row.impressions=Math.round(row.clicks/(ctr/100)); row.reach=reach(row.impressions); } }
+        }
+        return row;
+      }
+
+      if (key==="ctr") {
+        var c2=num(row.ctr);
+        if (model==="CPM") { row.clicks=impr?Math.round(impr*c2/100):null; }
+        else if (model==="CPC") { var cl=num(row.clicks)||num(row.units); if (cl&&c2) { row.impressions=Math.round(cl/(c2/100)); row.reach=reach(row.impressions); } }
+        else if (model==="CPV (view)") { row.clicks=impr?Math.round(impr*c2/100):null; }
+        else if (model==="CPV (visit)") { var cl2=num(row.clicks); if (cl2&&c2) { row.impressions=Math.round(cl2/(c2/100)); row.reach=reach(row.impressions); } }
+        return row;
+      }
+
+      if (key==="pi") {
+        if (model==="CPV (visit)") {
+          var p2=num(row.pi), visits=num(row.units);
+          if (visits&&p2) { row.clicks=Math.round(visits/(p2/100)); if (ctr) { row.impressions=Math.round(row.clicks/(ctr/100)); row.reach=reach(row.impressions); } }
+        }
+        return row;
+      }
+
+      if (key==="vtr") {
+        var v2=num(row.vtr);
+        if (model==="CPM"&&vid) { row.views=v2?Math.round(impr*v2/100):null; }
+        else if (model==="CPV (view)") { var vw=num(row.views)||num(row.units); if (vw&&v2) { row.impressions=Math.round(vw/(v2/100)); row.reach=reach(row.impressions); if (ctr) row.clicks=Math.round(row.impressions*ctr/100); } }
+        return row;
+      }
+
+      if (key==="impressions") {
+        if (model==="CPM") { row.clicks=ctr?Math.round(impr*ctr/100):null; row.views=(vid&&vtr)?Math.round(impr*vtr/100):null; }
+        else if (model==="CPC") { row.clicks=ctr?Math.round(impr*ctr/100):null; if (row.clicks) row.units=row.clicks; }
+        else if (model==="CPV (view)") { row.clicks=ctr?Math.round(impr*ctr/100):null; }
+        row.reach=reach(impr); return row;
+      }
+      if (key==="clicks") {
+        if (model==="CPC") { row.units=num(row.clicks); if (cp) { row.budgetNet=Math.round(row.units*cp); row.budgetGross=Math.round(row.budgetNet*(1+VAT/100)); } if (ctr) { row.impressions=Math.round(num(row.clicks)/(ctr/100)); row.reach=reach(row.impressions); } }
+        return row;
+      }
+      if (key==="views") {
+        if ((model==="CPM"||model==="CPV (view)")&&vtr) { row.impressions=Math.round(num(row.views)/(vtr/100)); row.reach=reach(row.impressions); }
+        return row;
+      }
+      if (key==="frequency") {
+        var f2=num(row.frequency); row.reach=(row.impressions&&f2)?Math.round(num(row.impressions)/f2):null; return row;
+      }
+      return row;
+    }
+
+    var IS  = {width:"100%",padding:"9px 12px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,fontSize:14,color:"#1a1a1a",fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+    var LS  = {fontSize:11,fontWeight:700,color:ACCENT,letterSpacing:"0.07em",marginBottom:4,display:"block"};
+    var CS  = {background:WHITE,border:"1.5px solid "+BORDER,borderRadius:16,padding:"20px 24px"};
+    var THS = {padding:"7px 10px",fontSize:11,fontWeight:700,color:ACCENT,borderBottom:"2px solid "+BORDER,borderRight:"1px solid #F8BBD0",whiteSpace:"nowrap",background:"#FFF0F5",textAlign:"left"};
+    var TDB = {padding:0,borderBottom:"1px solid #FCE4EC",borderRight:"1px solid #FCE4EC"};
+    var CBX = {display:"flex",alignItems:"center",gap:6,marginTop:7,cursor:"pointer",fontSize:12,color:"#1a1a1a",userSelect:"none"};
+
+    function Field(p) {
+      return <div style={{display:"flex",flexDirection:"column"}}><span style={LS}>{p.label}</span>{p.children}{p.hint&&<span style={{fontSize:11,color:MUTED,marginTop:3}}>{p.hint}</span>}</div>;
+    }
+
+    function Sel(p) {
+      return <select value={p.value} onChange={function(e){p.onChange(e.target.value);}} style={{...IS,appearance:"none",backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23D81B5E' d='M6 8L1 3h10z'/%3E%3C/svg%3E\")",backgroundRepeat:"no-repeat",backgroundPosition:"right 12px center",paddingRight:32}}>
+        <option value="">{p.placeholder||"Выбрать..."}</option>
+        {p.options.map(function(o){return <option key={o} value={o}>{o}</option>;})}
+      </select>;
+    }
+
+    function MultiCheck(p) {
+      function toggle(o) { var s=new Set(p.value); s.has(o)?s.delete(o):s.add(o); p.onChange([...s]); }
+      return <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{p.options.map(function(o){var a=p.value.includes(o); return <button key={o} onClick={function(){toggle(o);}} style={{padding:"5px 12px",borderRadius:99,fontSize:12,fontWeight:500,border:"1.5px solid "+(a?ACCENT:BORDER),background:a?ACCENT:WHITE,color:a?WHITE:ACCENT,cursor:"pointer"}}>{o}</button>;})}</div>;
+    }
+
+    function BudgetInput(p) {
+      var st=useState(false); var focused=st[0]; var setFocused=st[1];
+      var display=(!focused&&p.value)?Number(p.value).toLocaleString("ru-RU"):(p.value||"");
+      return <input type={focused?"number":"text"} value={display} onChange={function(e){p.onChange(e.target.value);}} onFocus={function(){setFocused(true);}} onBlur={function(){setFocused(false);}} style={IS} placeholder="0"/>;
+    }
+
+    function ValidationBanner(p) {
+      if (!p.errors.length) return null;
+      return <div style={{background:"#FFF3E0",border:"1.5px solid #FFB300",borderRadius:10,padding:"12px 16px",marginTop:12}}>
+        <div style={{fontWeight:700,fontSize:12,color:"#E65100",marginBottom:6}}>Заполни обязательные поля:</div>
+        {p.errors.map(function(e,i){return <div key={i} style={{fontSize:12,color:"#BF360C"}}>{"• "+e}</div>;})}
+      </div>;
+    }
+
+    function EditCell(p) {
+      var row=p.row, col=p.col, value=p.value, onChange=p.onChange, rowIdx=p.rowIdx;
+      var st=useState(false); var editing=st[0]; var setEditing=st[1];
+      var model=row.unit||"CPM";
+      var vid=isVid(row.format);
+      var empty=value===null||value===undefined||value==="";
+
+      if ((col.key==="vtr"||col.key==="views")&&!vid) return <td style={{...TDB,padding:"7px 10px",fontSize:12,color:MUTED,textAlign:"center"}}>—</td>;
+      if (col.key==="pi"&&model!=="CPV (visit)") return <td style={{...TDB,padding:"7px 10px",fontSize:12,color:MUTED,textAlign:"center"}}>—</td>;
+
+      var unitsAuto=col.key==="units";
+      var disp="";
+      if (!empty) {
+        if (["budgetNet","budgetGross","cpmNet"].includes(col.key)) disp=fmtRub(value);
+        else if (col.key==="ctr"||col.key==="vtr"||col.key==="pi") disp=fmtPct(value);
+        else if (["units","impressions","clicks","views","reach","frequency"].includes(col.key)) disp=fmtInt(value);
+        else disp=String(value);
+      }
+
+      if (editing) {
+        if (col.type==="select") return <td style={TDB}><select autoFocus value={value||""} onChange={function(e){onChange(rowIdx,col.key,e.target.value);setEditing(false);}} onBlur={function(){setEditing(false);}} style={{width:"100%",padding:"6px 8px",border:"none",background:"#FFF0F5",fontSize:12,fontFamily:"inherit",outline:"none",color:"#1a1a1a"}}>{(col.opts||FORMATS_PRESET).map(function(o){return <option key={o} value={o}>{o}</option>;})}</select></td>;
+        var step=(col.key==="ctr"||col.key==="vtr"||col.key==="cpmNet"||col.key==="pi")?0.01:undefined;
+        return <td style={TDB}><input autoFocus type={col.type==="number"?"number":col.type==="date"?"date":"text"} step={step} defaultValue={value!=null?value:""} onBlur={function(e){onChange(rowIdx,col.key,col.type==="number"?(e.target.value===""?null:Number(e.target.value)):e.target.value);setEditing(false);}} onKeyDown={function(e){if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditing(false);}} style={{width:"100%",minWidth:col.type==="number"?90:120,padding:"6px 8px",border:"none",background:"#FFF0F5",fontSize:12,fontFamily:"inherit",outline:"none",color:"#1a1a1a",boxSizing:"border-box"}}/></td>;
+      }
+
+      return <td onClick={function(){if(!unitsAuto)setEditing(true);}} title={unitsAuto?"Рассчитается после ввода цены":"Нажми для редактирования"} style={{...TDB,padding:"7px 10px",fontSize:12,color:"#1a1a1a",cursor:unitsAuto?"default":"text",whiteSpace:(col.key==="targeting"||col.key==="product")?"normal":"nowrap",maxWidth:(col.key==="targeting"||col.key==="product")?180:undefined,background:empty?(unitsAuto?"#FFF0F5":"#FFFDE7"):"transparent",textAlign:empty?"center":"left",position:"relative"}}>
+        {empty?(unitsAuto?<span style={{fontSize:10,color:ACCENT}}>введи цену →</span>:<span style={{color:"#F9A825",fontSize:11}}>заполнить</span>):col.key==="format"?<span style={{background:(FORMAT_COLORS[value]||{bg:"#eee"}).bg,color:(FORMAT_COLORS[value]||{color:"#333"}).color,padding:"2px 9px",borderRadius:99,fontSize:11,fontWeight:700}}>{value}</span>:disp}
+        {!empty&&!unitsAuto&&<span style={{position:"absolute",top:3,right:4,fontSize:9,color:"#F8BBD0",opacity:0.6}}>✎</span>}
+      </td>;
+    }
+
+    var INIT={client:"",brand:"",campaign:"",manager:"",periodStart:"",periodEnd:"",landingPage:"",goal:"",goalNote:"",budgetNet:"",model:"CPM",formats:[],customFormat:"",geo:"",socdem:"",audience:"",frequency:"",platforms:[]};
+
+    function App() {
+      var s0=useState(INIT);          var form=s0[0],setForm=s0[1];
+      var s1=useState([]);            var rows=s1[0],setRows=s1[1];
+      var s2=useState(false);         var loading=s2[0],setLoading=s2[1];
+      var s3=useState("");            var statusMsg=s3[0],setStatusMsg=s3[1];
+      var s4=useState(false);         var statusErr=s4[0],setStatusErr=s4[1];
+      var s5=useState(1);             var version=s5[0],setVersion=s5[1];
+      var s6=useState([]);            var errors=s6[0],setErrors=s6[1];
+      var s7=useState(false);         var showVal=s7[0],setShowVal=s7[1];
+      var s8=useState(false);         var geoSplit=s8[0],setGeoSplit=s8[1];
+      var s9=useState(false);         var formatSplit=s9[0],setFormatSplit=s9[1];
+      var s10=useState(false);        var platformSplit=s10[0],setPlatformSplit=s10[1];
+      var s11=useState("");           var gsStatus=s11[0],setGsStatus=s11[1];
+      var s12=useState(function(){ return localStorage.getItem("ads_api_key")||""; });
+      var apiKey=s12[0],setApiKey=s12[1];
+      var s13=useState(false);        var showApiInput=s13[0],setShowApiInput=s13[1];
+
+      function set(k,v){setForm(function(f){return Object.assign({},f,{[k]:v});});}
+      var allFormats=FORMATS_PRESET.concat(form.customFormat.trim()?[form.customFormat.trim()]:[]);
+      var fileName=buildFileName(form,version);
+      var finalInterests=form.audience||"";
+
+      var updateCell=useCallback(function(ri,key,val){setRows(function(prev){var next=prev.map(function(r,i){return i===ri?Object.assign({},r,{[key]:val}):r;});next[ri]=recalc(next[ri],key);return next;});},[]);
+
+      function newRow(){
+        var productName=(form.model==="CPC"||form.model==="CPV (visit)")?"SurfClick":"ADSurfing Reach Maximizer";
+        return{product:productName,format:form.formats[0]||"Баннеры",dateStart:form.periodStart||"",dateEnd:form.periodEnd||"",targeting:"",platform:form.platforms.join("/"),unit:form.model||"CPM",units:null,cpmNet:null,budgetNet:form.budgetNet?num(form.budgetNet):null,vat:VAT,budgetGross:form.budgetNet?Math.round(num(form.budgetNet)*(1+VAT/100)):null,impressions:null,ctr:null,clicks:null,pi:null,vtr:null,views:null,frequency:form.frequency?num(form.frequency):null,reach:null};
+      }
+      function addRow(){setRows(function(p){return p.concat([newRow()]);});}
+      function dupRow(i){setRows(function(p){return p.slice(0,i+1).concat([Object.assign({},p[i])]).concat(p.slice(i+1));});}
+      function delRow(i){setRows(function(p){return p.filter(function(_,idx){return idx!==i;});});}
+
+      function validate(){var e=[];if(!form.client.trim())e.push("Клиент");if(!form.periodStart)e.push("Дата старта");if(!form.periodEnd)e.push("Дата окончания");if(!rows.length)e.push("Добавь строку в план");setErrors(e);return e.length===0;}
+
+      async function generate(){
+        if(!apiKey){alert("Укажи API ключ Anthropic в шапке страницы");return;}
+        setLoading(true);setStatusMsg("Генерирую...");setStatusErr(false);setRows([]);
+        var productName=(form.model==="CPC"||form.model==="CPV (visit)")?"SurfClick":"ADSurfing Reach Maximizer";
+        var brief=["Клиент: "+(form.client||"не указан"),"Бренд: "+(form.brand||"не указан"),"Кампания: "+(form.campaign||"не указано"),"Период: "+(form.periodStart?form.periodStart+" – "+(form.periodEnd||"?"):"не указан"),"Цель: "+(form.goal||"не указана")+(form.goalNote?" ("+form.goalNote+")":""),"Бюджет без НДС: "+(form.budgetNet?form.budgetNet+" руб.":"не указан"),"Модель: "+form.model,"Форматы: "+(form.formats.length?form.formats.join(", "):"все"),"Разбивать по форматам: "+(formatSplit?"да":"нет"),"Гео: "+(form.geo||"не указано"),"Разбивать по гео: "+(geoSplit?"да":"нет"),"Платформы: "+(form.platforms.join(", ")||"не указаны"),"Разбивать по платформам: "+(platformSplit?"да":"нет"),"Аудитория: "+(form.audience||"не указана"),"Частота: "+(form.frequency||"не задана")].join("\n");
+        var sys="Ты — медиапланировщик ADSurfing. Верни ТОЛЬКО валидный JSON без markdown.\nФорматы: Connected TV, Online Video, Shoppable Ads, Rewarded Video, Баннеры, Rich Media, Fullscreen.\nVTR и просмотры только для: Connected TV, Online Video, Shoppable Ads, Rewarded Video.\nПродукт=\""+productName+"\". НДС=22%. Единица=\""+form.model+"\".\ncpmNet=null. units=null. PI=null. Если частота не задана — reach=null.\nCPV(visit): units=визиты, PI=конверсия клика в визит.\nВерни: {\"rows\":[{\"product\":\""+productName+"\",\"format\":\"Баннеры\",\"dateStart\":\"01.07.2025\",\"dateEnd\":\"31.07.2025\",\"targeting\":\"...\",\"platform\":\"web\",\"unit\":\""+form.model+"\",\"units\":null,\"cpmNet\":null,\"budgetNet\":"+(form.budgetNet||null)+",\"vat\":22,\"budgetGross\":"+(form.budgetNet?Math.round(num(form.budgetNet)*1.22):null)+",\"impressions\":null,\"ctr\":null,\"clicks\":null,\"pi\":null,\"vtr\":null,\"views\":null,\"frequency\":"+(form.frequency||null)+",\"reach\":null}]}";
+        try{
+          var resp=await fetch("https://api.anthropic.com/v1/messages",{
+            method:"POST",
+            headers:{
+              "Content-Type":"application/json",
+              "x-api-key":apiKey,
+              "anthropic-version":"2023-06-01",
+              "anthropic-dangerous-direct-browser-access":"true"
+            },
+            body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:sys,messages:[{role:"user",content:brief}]})
+          });
+          var data=await resp.json();
+          if(data.error){throw new Error(data.error.message);}
+          var raw=data.content.filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
+          var match=raw.match(/\{[\s\S]*\}/);
+          if(!match)throw new Error("JSON не найден");
+          var parsed=JSON.parse(match[0].replace(/,\s*([}\]])/g,"$1"));
+          setRows(Array.isArray(parsed)?parsed:(parsed.rows||[]));
+          setStatusMsg("");
+        }catch(e){setStatusMsg("Ошибка: "+e.message);setStatusErr(true);}
+        setLoading(false);
+      }
+
+      async function saveToSheets(){
+        setShowVal(true);
+        if(!validate()){setGsStatus("");return;}
+        setGsStatus("");
+        try{
+          var payload={fileName:fileName,header:{advertiser:form.client,brand:form.brand,campaign:form.campaign,period:periodRu(form.periodStart,form.periodEnd),manager:form.manager},rows:rows.map(function(r){return Object.assign({},r,{geo:form.geo,socdem:form.socdem,interests:finalInterests});})};
+          var json=JSON.stringify(payload);
+          await navigator.clipboard.writeText(json);
+          setGsStatus("copied");
+          setVersion(function(v){return v+1;});
+          setTimeout(function(){setGsStatus("");},15000);
+        }catch(e){
+          setGsStatus("error");
+          setStatusMsg("Ошибка копирования: "+e.message);setStatusErr(true);
+        }
+      }
+
+      var totNet=rows.reduce(function(s,r){return s+(num(r.budgetNet)||0);},0);
+      var totGross=rows.reduce(function(s,r){return s+(num(r.budgetGross)||0);},0);
+      var totImpr=rows.reduce(function(s,r){return s+(num(r.impressions)||0);},0);
+      var totClicks=rows.reduce(function(s,r){return s+(num(r.clicks)||0);},0);
+
+      return (
+        <div style={{background:BG,minHeight:"100vh",paddingBottom:80}}>
+
+          {/* Шапка */}
+          <div style={{background:WHITE,borderBottom:"2px solid "+BORDER,padding:"14px 32px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+            <div>
+              <div style={{fontSize:22,fontWeight:800,color:ACCENT,letterSpacing:"-0.5px"}}>ADSURFING</div>
+              <div style={{fontSize:12,color:MUTED,marginTop:1}}>Генератор медиаплана</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              {!showApiInput && (
+                <button onClick={function(){setShowApiInput(true);}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+BORDER,background:apiKey?"#F0FFF4":"#FFF0F5",color:apiKey?"#276749":ACCENT,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  {apiKey?"API ключ: задан ✓":"API ключ: не задан"}
+                </button>
+              )}
+              {showApiInput && (
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input
+                    type="password"
+                    placeholder="sk-ant-..."
+                    defaultValue={apiKey}
+                    id="api-key-input"
+                    style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:280,outline:"none"}}
+                  />
+                  <button onClick={function(){
+                    var val=document.getElementById("api-key-input").value.trim();
+                    if(val){localStorage.setItem("ads_api_key",val);setApiKey(val);}
+                    setShowApiInput(false);
+                  }} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
+                  <button onClick={function(){setShowApiInput(false);}} style={{padding:"7px 10px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:12,cursor:"pointer"}}>Отмена</button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{maxWidth:1000,margin:"0 auto",padding:"24px 20px 0"}}>
+            <div style={CS}>
+              <div style={{fontSize:13,fontWeight:700,color:ACCENT,marginBottom:18}}>ПАРАМЕТРЫ КАМПАНИИ</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"14px 20px"}}>
+                <Field label="КЛИЕНТ"><input style={{...IS,borderColor:showVal&&!form.client.trim()?"#E53935":BORDER}} value={form.client} onChange={function(e){set("client",e.target.value);}} placeholder="Название клиента"/></Field>
+                <Field label="БРЕНД"><input style={IS} value={form.brand} onChange={function(e){set("brand",e.target.value);}} placeholder="Название бренда"/></Field>
+                <Field label="НАЗВАНИЕ КАМПАНИИ"><input style={IS} value={form.campaign} onChange={function(e){set("campaign",e.target.value);}} placeholder="Охват, ретаргетинг..."/></Field>
+                <Field label="МЕНЕДЖЕР"><input style={IS} value={form.manager} onChange={function(e){set("manager",e.target.value);}} placeholder="Имя менеджера"/></Field>
+                <Field label="ДАТА СТАРТА"><input type="date" style={{...IS,borderColor:showVal&&!form.periodStart?"#E53935":BORDER}} value={form.periodStart} onChange={function(e){set("periodStart",e.target.value);}}/></Field>
+                <Field label="ДАТА ОКОНЧАНИЯ"><input type="date" style={{...IS,borderColor:showVal&&!form.periodEnd?"#E53935":BORDER}} value={form.periodEnd} onChange={function(e){set("periodEnd",e.target.value);}}/></Field>
+                <Field label="ЦЕЛЬ"><Sel value={form.goal} onChange={function(v){set("goal",v);set("goalNote","");}} options={GOALS} placeholder="Выбрать цель..."/></Field>
+                <Field label="БЮДЖЕТ БЕЗ НДС, РУБ"><BudgetInput value={form.budgetNet} onChange={function(v){set("budgetNet",v);}}/></Field>
+                <Field label="МОДЕЛЬ ЗАКУПКИ"><Sel value={form.model} onChange={function(v){set("model",v);}} options={MODELS}/></Field>
+              </div>
+
+              {(form.goal==="Конверсии"||form.goal==="Брендформанс") && (
+                <div style={{marginTop:14,padding:"14px 16px",background:"#FFF0F5",borderRadius:10,border:"1px solid "+BORDER}}>
+                  <Field label={form.goal==="Конверсии"?"ЧТО ЯВЛЯЕТСЯ КОНВЕРСИЕЙ?":"ОПТИМИЗАЦИЯ НА ЦД — УТОЧНЕНИЕ"}>
+                    <input style={IS} value={form.goalNote} onChange={function(e){set("goalNote",e.target.value);}} placeholder={form.goal==="Конверсии"?"Например: заполненная заявка с сайта":"Например: целевые действия 25–45 лет"}/>
+                  </Field>
+                </div>
+              )}
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"14px 20px",marginTop:14}}>
+                <Field label="ЧАСТОТА НА ФЛАЙТ" hint="Оставь пустым — охват не рассчитывается">
+                  <input type="number" style={IS} value={form.frequency} onChange={function(e){set("frequency",e.target.value);}} placeholder="Без ограничений" min="1"/>
+                </Field>
+                <Field label="ГЕО">
+                  <input style={IS} value={form.geo} onChange={function(e){set("geo",e.target.value);}} placeholder="Москва, СПб, Казань..."/>
+                  <label style={CBX}><input type="checkbox" checked={geoSplit} onChange={function(e){setGeoSplit(e.target.checked);}} style={{accentColor:ACCENT,width:14,height:14}}/>Разбивать по каждому гео отдельно</label>
+                </Field>
+                <Field label="СОЦ-ДЕМ"><input style={IS} value={form.socdem} onChange={function(e){set("socdem",e.target.value);}} placeholder="Все 18+, ЖЦА 25–45..."/></Field>
+              </div>
+
+              <div style={{marginTop:14}}>
+                <Field label="ФОРМАТЫ"><MultiCheck options={allFormats} value={form.formats} onChange={function(v){set("formats",v);}}/></Field>
+                <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
+                  <input style={{...IS,width:220,fontSize:12,padding:"7px 10px"}} value={form.customFormat} onChange={function(e){set("customFormat",e.target.value);}} placeholder="+ Другой формат (вписать)"/>
+                  {form.customFormat.trim()&&!form.formats.includes(form.customFormat.trim())&&<button onClick={function(){set("formats",form.formats.concat([form.customFormat.trim()]));}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+ACCENT,background:WHITE,color:ACCENT,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>Добавить</button>}
+                </div>
+                <label style={CBX}><input type="checkbox" checked={formatSplit} onChange={function(e){setFormatSplit(e.target.checked);}} style={{accentColor:ACCENT,width:14,height:14}}/>Разбивать по каждому формату отдельно</label>
+              </div>
+
+              <div style={{marginTop:14}}>
+                <Field label="ПЛАТФОРМЫ"><MultiCheck options={PLATFORMS_OPT} value={form.platforms} onChange={function(v){set("platforms",v);}}/></Field>
+                <label style={CBX}><input type="checkbox" checked={platformSplit} onChange={function(e){setPlatformSplit(e.target.checked);}} style={{accentColor:ACCENT,width:14,height:14}}/>Разбивать по каждой платформе отдельно</label>
+              </div>
+
+              <div style={{marginTop:14}}>
+                <Field label="ИНТЕРЕСЫ / АУДИТОРИЯ">
+                  <input style={IS} value={form.audience} onChange={function(e){set("audience",e.target.value);}} placeholder="Владельцы кошек, интерес к авто..."/>
+                </Field>
+              </div>
+
+              <div style={{marginTop:14}}>
+                <Field label="LANDING PAGE"><input style={IS} value={form.landingPage} onChange={function(e){set("landingPage",e.target.value);}} placeholder="https://..."/></Field>
+              </div>
+
+              <div style={{marginTop:12,padding:"10px 14px",background:"#FFF0F5",borderRadius:8,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:ACCENT,fontWeight:700,whiteSpace:"nowrap"}}>ИМЯ ФАЙЛА:</span>
+                <span style={{fontSize:12,color:"#1a1a1a",fontFamily:"monospace",wordBreak:"break-all"}}>{fileName}</span>
+              </div>
+
+              <div style={{marginTop:14,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <button onClick={generate} disabled={loading} style={{padding:"11px 28px",borderRadius:10,border:"none",background:loading?"#F8BBD0":ACCENT,color:WHITE,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+                  {loading?"Генерирую...":"Сгенерировать медиаплан"}
+                </button>
+                {rows.length>0 && (
+                  <button onClick={addRow} style={{padding:"11px 14px",borderRadius:10,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:13,cursor:"pointer"}}>+ Строка</button>
+                )}
+                {statusMsg && <span style={{fontSize:12,color:statusErr?"#E53935":ACCENT}}>{statusMsg}</span>}
+              </div>
+              {showVal && <ValidationBanner errors={errors}/>}
+            </div>
+
+            {form.budgetNet && (
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginTop:16}}>
+                {[["БЮДЖЕТ БЕЗ НДС",fmtRub(Number(form.budgetNet))],["НДС "+VAT+"%",fmtRub(Number(form.budgetNet)*VAT/100)],["БЮДЖЕТ С НДС",fmtRub(Number(form.budgetNet)*(1+VAT/100))]].map(function(item){
+                  return <div key={item[0]} style={{background:WHITE,border:"1.5px solid "+BORDER,borderRadius:14,padding:"14px 18px"}}><div style={{fontSize:11,fontWeight:700,color:ACCENT,letterSpacing:"0.07em",marginBottom:4}}>{item[0]}</div><div style={{fontSize:20,fontWeight:800,color:ACCENT}}>{item[1]}</div></div>;
+                })}
+              </div>
+            )}
+
+            {rows.length>0 && (
+              <div style={{...CS,marginTop:16,padding:"16px 0 0"}}>
+                <div style={{padding:"0 24px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                  <div style={{fontSize:13,fontWeight:700,color:ACCENT}}>МЕДИАПЛАН</div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,fontSize:11,color:MUTED}}>
+                    <span>Нажми на ячейку для редактирования</span>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:11,height:11,display:"inline-block",background:"#FFF0F5",border:"1px solid "+ACCENT,borderRadius:2}}></span>введи цену</span>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:11,height:11,display:"inline-block",background:"#FFFDE7",border:"1px solid #F9A825",borderRadius:2}}></span>заполнить</span>
+                  </div>
+                </div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{borderCollapse:"collapse",minWidth:1600,width:"100%"}}>
+                    <thead>
+                      <tr>
+                        <th style={{...THS,width:56,textAlign:"center"}}>⧉ ×</th>
+                        {COLS.map(function(c){return <th key={c.key} style={THS}>{c.label}</th>;})}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(function(r,i){
+                        return (
+                          <tr key={i} style={{background:i%2===0?WHITE:"#FFF5F8"}}>
+                            <td style={{...TDB,padding:"4px 8px",textAlign:"center",whiteSpace:"nowrap"}}>
+                              <button onClick={function(){dupRow(i);}} title="Дублировать" style={{background:"none",border:"none",cursor:"pointer",color:"#F8BBD0",fontSize:15,padding:"2px 3px"}}>⧉</button>
+                              <button onClick={function(){delRow(i);}} title="Удалить" style={{background:"none",border:"none",cursor:"pointer",color:"#F8BBD0",fontSize:17,lineHeight:1,padding:"2px 3px"}}>×</button>
+                            </td>
+                            {COLS.map(function(col){return <EditCell key={col.key} row={r} col={col} value={r[col.key]} onChange={updateCell} rowIdx={i}/>;})}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:"#FFF0F5",fontWeight:700}}>
+                        <td style={{...TDB,padding:"7px 8px"}}></td>
+                        <td colSpan={9} style={{...TDB,padding:"7px 10px",textAlign:"right",color:ACCENT,fontSize:11,fontWeight:700}}>ИТОГО:</td>
+                        <td style={{...TDB,padding:"7px 10px",fontSize:12,color:ACCENT}}>{fmtRub(totNet)}</td>
+                        <td style={{...TDB,padding:"7px 10px"}}></td>
+                        <td style={{...TDB,padding:"7px 10px",fontSize:12,color:ACCENT,fontWeight:800}}>{fmtRub(totGross)}</td>
+                        <td style={{...TDB,padding:"7px 10px",fontSize:12,color:ACCENT}}>{fmtInt(totImpr)}</td>
+                        <td style={{...TDB,padding:"7px 10px"}}></td>
+                        <td style={{...TDB,padding:"7px 10px",fontSize:12,color:ACCENT}}>{fmtInt(totClicks)}</td>
+                        <td colSpan={4} style={{...TDB,padding:"7px 10px"}}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div style={{padding:"20px 24px 24px"}}>
+                  <button onClick={saveToSheets} style={{display:"block",width:"100%",padding:"14px",borderRadius:10,border:"none",background:ACCENT,color:WHITE,fontSize:15,fontWeight:700,cursor:"pointer"}}>
+                    Сохранить в Google Sheets
+                  </button>
+
+                  {gsStatus==="copied" && (
+                    <div style={{marginTop:16,padding:"20px",background:"#F0FFF4",borderRadius:12,border:"1.5px solid #68D391"}}>
+                      <div style={{fontSize:14,fontWeight:700,color:"#276749",marginBottom:14}}>Данные скопированы в буфер. Теперь 3 шага:</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>1</span>
+                          <span style={{fontSize:14,color:"#1a1a1a",lineHeight:1.5}}>Открой Apps Script: <a href="https://script.google.com" target="_blank" rel="noreferrer" style={{color:ACCENT,fontWeight:600}}>script.google.com</a></span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>2</span>
+                          <span style={{fontSize:14,color:"#1a1a1a",lineHeight:1.5}}>Найди переменную <code style={{background:"#f0f0f0",padding:"1px 6px",borderRadius:4}}>DATA = ``</code> и вставь данные между обратными кавычками (Cmd+V)</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                          <span style={{background:ACCENT,color:WHITE,borderRadius:"50%",width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>3</span>
+                          <span style={{fontSize:14,color:"#1a1a1a",lineHeight:1.5}}>Нажми ▶ Выполнить и выбери функцию <code style={{background:"#f0f0f0",padding:"1px 6px",borderRadius:4}}>createFromGenerator</code></span>
+                        </div>
+                      </div>
+                      <button onClick={saveToSheets} style={{marginTop:16,padding:"9px 18px",borderRadius:8,border:"1.5px solid #68D391",background:WHITE,color:"#276749",fontSize:13,fontWeight:600,cursor:"pointer"}}>Скопировать ещё раз</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
