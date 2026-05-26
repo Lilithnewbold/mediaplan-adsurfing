@@ -16,7 +16,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useCallback } = React;
+    const { useState, useCallback, useEffect } = React;
 
     const ACCENT = "#D81B5E";
     const BORDER = "#F48FB1";
@@ -251,6 +251,48 @@
       </td>;
     }
 
+    var TAXONOMY_URL = "https://docs.google.com/spreadsheets/d/1wLIMcTJt7QWWOm4rDs9jNdysWMv-5_5lJStSvju9sN4/gviz/tq?tqx=out:csv";
+
+    function parseCSVRow(line) {
+      var result = [], cur = "", inQ = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
+        else if (ch === ',' && !inQ) { result.push(cur); cur = ""; }
+        else { cur += ch; }
+      }
+      result.push(cur);
+      return result;
+    }
+
+    async function fetchTaxonomy() {
+      var resp = await fetch(TAXONOMY_URL);
+      var csv = await resp.text();
+      var lines = csv.split("\n");
+      var result = [];
+      for (var i = 1; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var cols = parseCSVRow(line);
+        if (!cols[1]) continue;
+        var keywords = cols[0].toLowerCase().split(",").map(function(k){ return k.trim(); }).filter(function(k){ return k.length >= 3; });
+        result.push({ keywords: keywords, segment: cols[1].trim(), category: (cols[2]||"").trim() });
+      }
+      return result;
+    }
+
+    function matchSegments(audienceText, taxonomy) {
+      if (!audienceText || !taxonomy.length) return [];
+      var text = audienceText.toLowerCase();
+      var matched = [], seen = new Set();
+      taxonomy.forEach(function(entry) {
+        if (seen.has(entry.segment)) return;
+        var hit = entry.keywords.some(function(kw) { return text.includes(kw); });
+        if (hit) { matched.push(entry.segment); seen.add(entry.segment); }
+      });
+      return matched;
+    }
+
     var INIT={client:"",brand:"",campaign:"",manager:"",periodStart:"",periodEnd:"",landingPage:"",goal:"",goalNote:"",budgetNet:"",model:"CPM",formats:[],customFormat:"",geo:"",socdem:"",audience:"",frequency:"",platforms:[]};
 
     function App() {
@@ -265,12 +307,19 @@
       var s8=useState(false);         var geoSplit=s8[0],setGeoSplit=s8[1];
       var s9=useState(false);         var formatSplit=s9[0],setFormatSplit=s9[1];
       var s10=useState(false);        var platformSplit=s10[0],setPlatformSplit=s10[1];
-      var s12=useState(function(){ return localStorage.getItem("ads_openrouter_key")||""; });
+      var s12=useState(function(){ return localStorage.getItem("ads_anthropic_key")||""; });
       var apiKey=s12[0],setApiKey=s12[1];
       var s13=useState(false);        var showApiInput=s13[0],setShowApiInput=s13[1];
       var s14=useState(function(){ return localStorage.getItem("ads_script_url")||""; });
       var scriptUrl=s14[0],setScriptUrl=s14[1];
       var s15=useState(false);        var showScriptInput=s15[0],setShowScriptInput=s15[1];
+      var s16=useState([]);           var taxonomy=s16[0],setTaxonomy=s16[1];
+      var s17=useState("loading");    var taxStatus=s17[0],setTaxStatus=s17[1];
+      var s18=useState(true);         var useTaxonomy=s18[0],setUseTaxonomy=s18[1];
+
+      useEffect(function(){
+        fetchTaxonomy().then(function(data){ setTaxonomy(data); setTaxStatus("ok"); }).catch(function(){ setTaxStatus("error"); });
+      },[]);
 
       function set(k,v){setForm(function(f){return Object.assign({},f,{[k]:v});});}
       var allFormats=FORMATS_PRESET.concat(form.customFormat.trim()?[form.customFormat.trim()]:[]);
@@ -290,33 +339,32 @@
       function validate(){var e=[];if(!form.client.trim())e.push("Клиент");if(!form.periodStart)e.push("Дата старта");if(!form.periodEnd)e.push("Дата окончания");if(!rows.length)e.push("Добавь строку в план");setErrors(e);return e.length===0;}
 
       async function generate(){
-        if(!apiKey){alert("Укажи OpenRouter API ключ в шапке страницы");return;}
+        if(!apiKey){alert("Укажи Anthropic API ключ в шапке страницы");return;}
         setLoading(true);setStatusMsg("Генерирую...");setStatusErr(false);setRows([]);
         var productName=(form.model==="CPC"||form.model==="CPV (visit)")?"SurfClick":"ADSurfing Reach Maximizer";
+        var matchedSegments=useTaxonomy?matchSegments(form.audience,taxonomy):[];
+        var segmentsNote=matchedSegments.length>0?"Доступные аудиторные сегменты ADSurfing для поля targeting — используй ТОЛЬКО из этого списка:\n"+matchedSegments.map(function(s){return"- "+s;}).join("\n")+"\n":"В поле targeting используй общее описание аудитории из брифа.\n";
         var brief=["Клиент: "+(form.client||"не указан"),"Бренд: "+(form.brand||"не указан"),"Кампания: "+(form.campaign||"не указано"),"Период: "+(form.periodStart?form.periodStart+" – "+(form.periodEnd||"?"):"не указан"),"Цель: "+(form.goal||"не указана")+(form.goalNote?" ("+form.goalNote+")":""),"Бюджет без НДС: "+(form.budgetNet?form.budgetNet+" руб.":"не указан"),"Модель: "+form.model,"Форматы: "+(form.formats.length?form.formats.join(", "):"все"),"Разбивать по форматам: "+(formatSplit?"да":"нет"),"Гео: "+(form.geo||"не указано"),"Разбивать по гео: "+(geoSplit?"да":"нет"),"Платформы: "+(form.platforms.join(", ")||"не указаны"),"Разбивать по платформам: "+(platformSplit?"да":"нет"),"Аудитория: "+(form.audience||"не указана"),"Частота: "+(form.frequency||"не задана")].join("\n");
-        var sys="Ты — медиапланировщик ADSurfing. Верни ТОЛЬКО валидный JSON без markdown.\nФорматы: Connected TV, Online Video, Shoppable Ads, Rewarded Video, Баннеры, Rich Media, Fullscreen.\nVTR и просмотры только для: Connected TV, Online Video, Shoppable Ads, Rewarded Video.\nПродукт=\""+productName+"\". НДС=22%. Единица=\""+form.model+"\".\ncpmNet=null. units=null. PI=null. Если частота не задана — reach=null.\nCPV(visit): units=визиты, PI=конверсия клика в визит.\nВерни: {\"rows\":[{\"product\":\""+productName+"\",\"format\":\"Баннеры\",\"dateStart\":\"01.07.2025\",\"dateEnd\":\"31.07.2025\",\"targeting\":\"...\",\"platform\":\"web\",\"unit\":\""+form.model+"\",\"units\":null,\"cpmNet\":null,\"budgetNet\":"+(form.budgetNet||null)+",\"vat\":22,\"budgetGross\":"+(form.budgetNet?Math.round(num(form.budgetNet)*1.22):null)+",\"impressions\":null,\"ctr\":null,\"clicks\":null,\"pi\":null,\"vtr\":null,\"views\":null,\"frequency\":"+(form.frequency||null)+",\"reach\":null}]}";
+        var sys="Ты — медиапланировщик ADSurfing. Верни ТОЛЬКО валидный JSON без markdown.\n"+segmentsNote+"Форматы: Connected TV, Online Video, Shoppable Ads, Rewarded Video, Баннеры, Rich Media, Fullscreen.\nVTR и просмотры только для: Connected TV, Online Video, Shoppable Ads, Rewarded Video.\nПродукт=\""+productName+"\". НДС=22%. Единица=\""+form.model+"\".\ncpmNet=null. units=null. PI=null. Если частота не задана — reach=null.\nCPV(visit): units=визиты, PI=конверсия клика в визит.\nВерни: {\"rows\":[{\"product\":\""+productName+"\",\"format\":\"Баннеры\",\"dateStart\":\"01.07.2025\",\"dateEnd\":\"31.07.2025\",\"targeting\":\"...\",\"platform\":\"web\",\"unit\":\""+form.model+"\",\"units\":null,\"cpmNet\":null,\"budgetNet\":"+(form.budgetNet||null)+",\"vat\":22,\"budgetGross\":"+(form.budgetNet?Math.round(num(form.budgetNet)*1.22):null)+",\"impressions\":null,\"ctr\":null,\"clicks\":null,\"pi\":null,\"vtr\":null,\"views\":null,\"frequency\":"+(form.frequency||null)+",\"reach\":null}]}";
         try{
-          var resp=await fetch("https://openrouter.ai/api/v1/chat/completions",{
+          var resp=await fetch("https://api.anthropic.com/v1/messages",{
             method:"POST",
             headers:{
               "Content-Type":"application/json",
-              "Authorization":"Bearer "+apiKey,
-              "HTTP-Referer":"https://adsurfing.netlify.app",
-              "X-Title":"ADSurfing Mediaplan Generator"
+              "x-api-key":apiKey,
+              "anthropic-version":"2023-06-01",
+              "anthropic-dangerous-direct-browser-access":"true"
             },
             body:JSON.stringify({
-              model:"meta-llama/llama-3.3-70b-instruct:free",
+              model:"claude-haiku-4-5-20251001",
               max_tokens:4000,
-              temperature:0.2,
-              messages:[
-                {role:"system",content:sys},
-                {role:"user",content:brief}
-              ]
+              system:sys,
+              messages:[{role:"user",content:brief}]
             })
           });
           var data=await resp.json();
           if(data.error){throw new Error(data.error.message);}
-          var raw=data.choices[0].message.content;
+          var raw=data.content.filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
           var match=raw.match(/\{[\s\S]*\}/);
           if(!match)throw new Error("JSON не найден в ответе");
           var parsed=JSON.parse(match[0].replace(/,\s*([}\]])/g,"$1"));
@@ -359,15 +407,17 @@
               <div style={{fontSize:12,color:MUTED,marginTop:1}}>Генератор медиаплана</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              {!showApiInput && (
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:8,border:"1.5px solid "+BORDER,background:taxStatus==="ok"?"#F0FFF4":taxStatus==="error"?"#FFF0F5":"#FFFDE7",fontSize:12,color:taxStatus==="ok"?"#276749":taxStatus==="error"?ACCENT:"#F9A825",fontWeight:600}}>
+                {taxStatus==="loading"?"Загрузка таксономии...":taxStatus==="error"?"Таксономия недоступна":"Таксономия: "+taxonomy.length+" сегментов"}
+              </div>
                 <button onClick={function(){setShowApiInput(true);}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+BORDER,background:apiKey?"#F0FFF4":"#FFF0F5",color:apiKey?"#276749":ACCENT,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  {apiKey?"OpenRouter API: задан ✓":"OpenRouter API: не задан"}
+                  {apiKey?"Anthropic API: задан ✓":"Anthropic API: не задан"}
                 </button>
               )}
               {showApiInput && (
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <input type="password" placeholder="sk-or-v1-..." defaultValue={apiKey} id="api-key-input" style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:260,outline:"none"}}/>
-                  <button onClick={function(){var val=document.getElementById("api-key-input").value.trim();if(val){localStorage.setItem("ads_openrouter_key",val);setApiKey(val);}setShowApiInput(false);}} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
+                  <input type="password" placeholder="sk-ant-..." defaultValue={apiKey} id="api-key-input" style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:260,outline:"none"}}/>
+                  <button onClick={function(){var val=document.getElementById("api-key-input").value.trim();if(val){localStorage.setItem("ads_anthropic_key",val);setApiKey(val);}setShowApiInput(false);}} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
                   <button onClick={function(){setShowApiInput(false);}} style={{padding:"7px 10px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:12,cursor:"pointer"}}>Отмена</button>
                 </div>
               )}
@@ -438,6 +488,20 @@
                 <Field label="ИНТЕРЕСЫ / АУДИТОРИЯ">
                   <input style={IS} value={form.audience} onChange={function(e){set("audience",e.target.value);}} placeholder="Владельцы кошек, интерес к авто..."/>
                 </Field>
+                <div style={{marginTop:8,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                  <label style={CBX}>
+                    <input type="checkbox" checked={useTaxonomy} onChange={function(e){setUseTaxonomy(e.target.checked);}} style={{accentColor:ACCENT,width:14,height:14}}/>
+                    Автоподбор сегментов из таксономии
+                  </label>
+                  {useTaxonomy && form.audience && taxonomy.length>0 && (function(){
+                    var segs=matchSegments(form.audience,taxonomy);
+                    return segs.length>0?(
+                      <div style={{fontSize:11,color:"#276749",background:"#F0FFF4",padding:"5px 10px",borderRadius:6,border:"1px solid #68D391",maxWidth:"100%"}}>
+                        Найдено: {segs.slice(0,4).join(", ")}{segs.length>4?" и ещё "+(segs.length-4):""}
+                      </div>
+                    ):(<div style={{fontSize:11,color:MUTED}}>Совпадений не найдено — таргетинг будет общим</div>);
+                  })()}
+                </div>
               </div>
 
               <div style={{marginTop:14}}>
