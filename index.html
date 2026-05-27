@@ -16,7 +16,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useCallback, useEffect } = React;
+    const { useState, useCallback, useEffect, useRef } = React;
 
     const ACCENT = "#D81B5E";
     const BORDER = "#F48FB1";
@@ -299,6 +299,83 @@
       return matched;
     }
 
+    function acMatch(token, taxonomy) {
+      if (!token || token.length < 2) return [];
+      var t = token.toLowerCase().trim();
+      var seen = new Set(), results = [];
+      taxonomy.forEach(function(entry) {
+        if (seen.has(entry.segment)) return;
+        var hit = entry.keywords.some(function(kw) { return kw.startsWith(t) || kw.includes(t); });
+        if (hit) { results.push(entry.segment); seen.add(entry.segment); }
+      });
+      return results.slice(0, 8);
+    }
+
+    function getCurrentToken(val) {
+      var parts = val.split(/[;,]/);
+      return (parts[parts.length - 1] || "").trim();
+    }
+
+    function AudienceInput(p) {
+      var sd = useState([]); var suggestions = sd[0]; var setSuggestions = sd[1];
+      var sp = useState(false); var showDrop = sp[0]; var setShowDrop = sp[1];
+      var sc = useState(-1); var cursor = sc[0]; var setCursor = sc[1];
+      var wrapRef = useRef(null);
+
+      useEffect(function() {
+        function handler(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setShowDrop(false); }
+        document.addEventListener("mousedown", handler);
+        return function() { document.removeEventListener("mousedown", handler); };
+      }, []);
+
+      function handleChange(e) {
+        var val = e.target.value;
+        p.onChange(val);
+        var token = getCurrentToken(val);
+        if (token.length >= 2 && p.taxonomy.length > 0) {
+          var sugs = acMatch(token, p.taxonomy);
+          setSuggestions(sugs);
+          setShowDrop(sugs.length > 0);
+        } else {
+          setSuggestions([]); setShowDrop(false);
+        }
+        setCursor(-1);
+      }
+
+      function selectSuggestion(seg) {
+        var parts = p.value.split(/[;,]/);
+        parts[parts.length - 1] = seg;
+        var newVal = parts.map(function(x){ return x.trim(); }).filter(Boolean).join("; ") + "; ";
+        p.onChange(newVal);
+        setSuggestions([]); setShowDrop(false); setCursor(-1);
+      }
+
+      function handleKeyDown(e) {
+        if (!showDrop) return;
+        if (e.key === "ArrowDown") { e.preventDefault(); setCursor(function(c){ return Math.min(c+1, suggestions.length-1); }); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); setCursor(function(c){ return Math.max(c-1, 0); }); }
+        else if (e.key === "Enter" && cursor >= 0) { e.preventDefault(); selectSuggestion(suggestions[cursor]); }
+        else if (e.key === "Escape") { setShowDrop(false); }
+      }
+
+      return (
+        <div ref={wrapRef} style={{position:"relative"}}>
+          <input style={IS} value={p.value} onChange={handleChange} onKeyDown={handleKeyDown} placeholder="Владельцы кошек, интерес к авто..."/>
+          {showDrop && suggestions.length > 0 && (
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:WHITE,border:"1.5px solid "+BORDER,borderRadius:8,boxShadow:"0 4px 16px rgba(0,0,0,0.12)",zIndex:1000,maxHeight:224,overflowY:"auto",marginTop:2}}>
+              {suggestions.map(function(seg, i) {
+                return (
+                  <div key={seg} onMouseDown={function(e){ e.preventDefault(); selectSuggestion(seg); }} style={{padding:"8px 12px",fontSize:13,cursor:"pointer",background:i===cursor?"#FFF0F5":WHITE,color:i===cursor?ACCENT:"#1a1a1a",borderBottom:i<suggestions.length-1?"1px solid #FCE4EC":"none",fontWeight:i===cursor?700:400}}>
+                    {seg}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     var INIT={client:"",brand:"",campaign:"",manager:"",periodStart:"",periodEnd:"",landingPage:"",goal:"",goalNote:"",budgetNet:"",model:"CPM",formats:[],customFormat:"",geo:"",socdem:"",audience:"",frequency:"",platforms:[]};
 
     function App() {
@@ -492,7 +569,7 @@
 
               <div style={{marginTop:14}}>
                 <Field label="ИНТЕРЕСЫ / АУДИТОРИЯ">
-                  <input style={IS} value={form.audience} onChange={function(e){set("audience",e.target.value);}} placeholder="Владельцы кошек, интерес к авто..."/>
+                  <AudienceInput value={form.audience} onChange={function(v){set("audience",v);}} taxonomy={taxonomy}/>
                 </Field>
                 <div style={{marginTop:8,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                   <label style={CBX}>
