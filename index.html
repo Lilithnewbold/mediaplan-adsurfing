@@ -71,9 +71,6 @@
     function fmtRub(v) { if (v == null || v === "") return ""; return Number(v).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2})+" ₽"; }
     function fmtInt(v) { if (v == null || v === "") return ""; return Number(v).toLocaleString("ru-RU"); }
     function fmtPct(v) { if (v == null || v === "") return ""; return Number(v).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2})+"%"; }
-    function dateRu(d) { if (!d) return ""; var p=d.split("-"); if (p.length<3) return d; var mo=["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"]; return p[2]+"."+mo[parseInt(p[1],10)-1]; }
-    function periodRu(s,e) { var a=dateRu(s),b=dateRu(e); if (a&&b) return a+" - "+b; return a||b||""; }
-
     function buildFileName(form, version) {
       var parts = ["Adsurfing"];
       if (form.client && form.client.trim()) parts.push(form.client.trim());
@@ -284,18 +281,36 @@
 
     function matchSegments(audienceText, taxonomy) {
       if (!audienceText || !taxonomy.length) return [];
-      var text = audienceText.toLowerCase().trim();
-      var tokens = text.split(/[\s,;]+/).filter(function(t){ return t.length >= 3; });
       var matched = [], seen = new Set();
-      taxonomy.forEach(function(entry) {
-        if (seen.has(entry.segment)) return;
-        var hit = entry.keywords.some(function(kw) {
-          // 1. Ключевое слово содержится в тексте целиком
-          if (text.includes(kw)) return true;
-          // 2. Токен из текста является префиксом ключевого слова
-          return tokens.some(function(tok) { return kw.startsWith(tok); });
+      var selections = audienceText.split(";").map(function(value) {
+        return value.toLowerCase().trim();
+      }).filter(Boolean);
+
+      selections.forEach(function(text) {
+        var exact = taxonomy.filter(function(entry) {
+          if (entry.segment.toLowerCase().trim() === text) return true;
+          return entry.keywords.some(function(kw) { return kw === text; });
         });
-        if (hit) { matched.push(entry.segment); seen.add(entry.segment); }
+
+        if (exact.length > 0) {
+          exact.forEach(function(entry) {
+            if (!seen.has(entry.segment)) {
+              matched.push(entry.segment);
+              seen.add(entry.segment);
+            }
+          });
+          return;
+        }
+
+        var tokens = text.split(/[\s,]+/).filter(function(t){ return t.length >= 3; });
+        taxonomy.forEach(function(entry) {
+          if (seen.has(entry.segment)) return;
+          var hit = entry.keywords.some(function(kw) {
+            if (text.includes(kw)) return true;
+            return tokens.some(function(tok) { return kw.startsWith(tok); });
+          });
+          if (hit) { matched.push(entry.segment); seen.add(entry.segment); }
+        });
       });
       return matched;
     }
@@ -393,9 +408,6 @@
       var s8=useState(false);         var geoSplit=s8[0],setGeoSplit=s8[1];
       var s9=useState(false);         var formatSplit=s9[0],setFormatSplit=s9[1];
       var s10=useState(false);        var platformSplit=s10[0],setPlatformSplit=s10[1];
-      var s14=useState(function(){ return localStorage.getItem("ads_script_url")||""; });
-      var scriptUrl=s14[0],setScriptUrl=s14[1];
-      var s15=useState(false);        var showScriptInput=s15[0],setShowScriptInput=s15[1];
       var s16=useState([]);           var taxonomy=s16[0],setTaxonomy=s16[1];
       var s17=useState("loading");    var taxStatus=s17[0],setTaxStatus=s17[1];
       var s18=useState(true);         var useTaxonomy=s18[0],setUseTaxonomy=s18[1];
@@ -410,7 +422,6 @@
       function set(k,v){setForm(function(f){return Object.assign({},f,{[k]:v});});}
       var allFormats=FORMATS_PRESET.concat(form.customFormat.trim()?[form.customFormat.trim()]:[]);
       var fileName=buildFileName(form,version);
-      var finalInterests=form.audience||"";
 
       var updateCell=useCallback(function(ri,key,val){setRows(function(prev){var next=prev.map(function(r,i){return i===ri?Object.assign({},r,{[key]:val}):r;});next[ri]=recalc(next[ri],key);return next;});},[]);
 
@@ -494,24 +505,6 @@
         setLoading(false);
       }
 
-      function saveToSheets(){
-        setShowVal(true);
-        if(!validate()) return;
-        if(!scriptUrl){ alert("Укажи URL Apps Script в шапке страницы"); return; }
-        var payload={fileName:fileName,header:{advertiser:form.client,brand:form.brand,campaign:form.campaign,period:periodRu(form.periodStart,form.periodEnd),manager:form.manager},rows:rows.map(function(r){return Object.assign({},r,{geo:form.geo,socdem:form.socdem,interests:finalInterests});})};
-        var frm=document.createElement("form");
-        frm.method="POST";
-        frm.action=scriptUrl;
-        frm.target="_blank";
-        var inp=document.createElement("input");
-        inp.type="hidden"; inp.name="data"; inp.value=JSON.stringify(payload);
-        frm.appendChild(inp);
-        document.body.appendChild(frm);
-        frm.submit();
-        document.body.removeChild(frm);
-        setVersion(function(v){return v+1;});
-      }
-
       var totNet=rows.reduce(function(s,r){return s+(num(r.budgetNet)||0);},0);
       var totGross=rows.reduce(function(s,r){return s+(num(r.budgetGross)||0);},0);
       var totImpr=rows.reduce(function(s,r){return s+(num(r.impressions)||0);},0);
@@ -521,9 +514,9 @@
       function fmtDateXlsx(str) {
         if (!str) return null;
         var m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-        if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+        if (m) return new Date(Date.UTC(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1])));
         m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+        if (m) return new Date(Date.UTC(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])));
         return null;
       }
 
@@ -763,18 +756,6 @@
                 {taxStatus==="loading"?"Загрузка таксономии...":taxStatus==="error"?"Таксономия недоступна":"Таксономия: "+taxonomy.length+" сегментов"}
               </div>
 
-              {!showScriptInput && (
-                <button onClick={function(){setShowScriptInput(true);}} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+BORDER,background:scriptUrl?"#F0FFF4":"#FFF0F5",color:scriptUrl?"#276749":ACCENT,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  {scriptUrl?"Apps Script: задан ✓":"Apps Script: не задан"}
-                </button>
-              )}
-              {showScriptInput && (
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <input type="text" placeholder="https://script.google.com/macros/s/..." defaultValue={scriptUrl} id="script-url-input" style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid "+BORDER,fontSize:13,width:340,outline:"none"}}/>
-                  <button onClick={function(){var val=document.getElementById("script-url-input").value.trim();if(val){localStorage.setItem("ads_script_url",val);setScriptUrl(val);}setShowScriptInput(false);}} style={{padding:"7px 14px",borderRadius:8,border:"none",background:ACCENT,color:WHITE,fontSize:12,fontWeight:700,cursor:"pointer"}}>Сохранить</button>
-                  <button onClick={function(){setShowScriptInput(false);}} style={{padding:"7px 10px",borderRadius:8,border:"1.5px solid "+BORDER,background:WHITE,color:MUTED,fontSize:12,cursor:"pointer"}}>Отмена</button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -964,9 +945,6 @@
                 <div style={{padding:"20px 24px 24px",display:"flex",gap:12}}>
                   <button onClick={downloadXLSX} disabled={xlsxLoading} style={{flex:1,padding:"14px",borderRadius:10,border:"none",background:xlsxLoading?"#F8BBD0":ACCENT,color:WHITE,fontSize:15,fontWeight:700,cursor:xlsxLoading?"not-allowed":"pointer"}}>
                     {xlsxLoading?"Генерирую файл...":"Скачать Excel →"}
-                  </button>
-                  <button onClick={saveToSheets} style={{flex:1,padding:"14px",borderRadius:10,border:"1.5px solid "+BORDER,background:WHITE,color:scriptUrl?ACCENT:MUTED,fontSize:13,fontWeight:600,cursor:scriptUrl?"pointer":"not-allowed"}}>
-                    {scriptUrl?"Сохранить в Google Sheets →":"Apps Script URL не задан"}
                   </button>
                 </div>
               </div>
